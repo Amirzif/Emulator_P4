@@ -128,8 +128,34 @@ static uint16_t s_usb_map_pid = 0;  /* PID of the currently loaded map */
 
 /* ─── GPIO gamepad detection & init ──────────────────────────────── */
 #ifndef CONFIG_HDMI_OUTPUT
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+/* Temporary active-low digital buttons; no original pad detection or ADC. */
+static const struct {
+    gpio_num_t pin;
+    int button;
+} s_nes_test_buttons[] = {
+    { GPIO_NUM_29, ODROID_INPUT_UP },
+    { GPIO_NUM_33, ODROID_INPUT_RIGHT },
+    { GPIO_NUM_31, ODROID_INPUT_DOWN },
+    { GPIO_NUM_30, ODROID_INPUT_LEFT },
+    { GPIO_NUM_51, ODROID_INPUT_START },
+    { GPIO_NUM_52, ODROID_INPUT_A },
+};
+#endif
+
 static void gpio_pad_detect_and_init(void)
 {
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << 29) | (1ULL << 33) | (1ULL << 31) |
+                        (1ULL << 30) | (1ULL << 51) | (1ULL << 52),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&cfg));
+#else
     /* Detection: pull-up GPIO 29 (L1), read. If 0 → custom pad connected
        (the physical pull-down on the gamepad board wins). */
     gpio_config_t detect_cfg = {
@@ -198,11 +224,32 @@ static void gpio_pad_detect_and_init(void)
     }
 
     ESP_LOGI(TAG, "GPIO gamepad initialized: analog(49,50,52) digital(28,29,30,32,34,35)");
+#endif
 }
 
 /* Read the custom GPIO gamepad and OR into the state */
 static void gpio_pad_read(odroid_gamepad_state *state)
 {
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    static int last_raw = -1, last_mapped = -1;
+    int raw = 0, mapped = 0;
+    for (size_t i = 0; i < sizeof(s_nes_test_buttons) / sizeof(s_nes_test_buttons[0]); ++i) {
+        int level = gpio_get_level(s_nes_test_buttons[i].pin);
+        raw |= level << i;
+        state->values[s_nes_test_buttons[i].button] |= level == 0;
+        mapped |= (state->values[s_nes_test_buttons[i].button] != 0) << i;
+    }
+    /* Includes USB input already merged into state. Log only transitions. */
+    if (raw != last_raw || mapped != last_mapped) {
+        ESP_LOGW(TAG, "NES buttons U29 R33 D31 L30 START51 A52: raw=%d%d%d%d%d%d mapped=%d%d%d%d%d%d (raw 0=pressed, mapped 1=pressed)",
+                 raw & 1, (raw >> 1) & 1, (raw >> 2) & 1,
+                 (raw >> 3) & 1, (raw >> 4) & 1, (raw >> 5) & 1,
+                 mapped & 1, (mapped >> 1) & 1, (mapped >> 2) & 1,
+                 (mapped >> 3) & 1, (mapped >> 4) & 1, (mapped >> 5) & 1);
+        last_raw = raw;
+        last_mapped = mapped;
+    }
+#else
     if (!s_gpio_pad_detected || !s_gpio_pad_adc) return;
 
     int joy_lr = 0, joy_ud = 0, ab_val = 0;
@@ -244,6 +291,7 @@ static void gpio_pad_read(odroid_gamepad_state *state)
             odroid_paddle_adc_raw = raw;
         }
     }
+#endif
 }
 #endif /* !CONFIG_HDMI_OUTPUT */
 
@@ -311,7 +359,7 @@ void odroid_input_gamepad_read(odroid_gamepad_state *state)
 
         /* Read paddle potentiometer if ADC has been initialised and
            GPIO gamepad is NOT active (GPIO pad reads paddle itself) */
-#ifndef CONFIG_HDMI_OUTPUT
+#if !defined(CONFIG_HDMI_OUTPUT) && !defined(RETRO_NES_DIRECT_BUTTON_TEST)
         if (!s_gpio_pad_detected && s_paddle_adc_handle) {
             int raw = 0;
             if (adc_oneshot_read(s_paddle_adc_handle, PADDLE_ADC_CHANNEL, &raw) == ESP_OK) {
@@ -380,7 +428,10 @@ odroid_gamepad_state odroid_input_read_raw(void)
 
 void odroid_paddle_adc_init(void)
 {
-#ifdef CONFIG_HDMI_OUTPUT
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    /* GPIO51 is digital START in this test; never configure its ADC channel. */
+    return;
+#elif defined(CONFIG_HDMI_OUTPUT)
     /* HDMI: no paddle ADC */
 #else
     if (s_paddle_adc_handle) return;  /* already initialised */

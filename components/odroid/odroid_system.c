@@ -76,7 +76,11 @@ void odroid_system_init(void)
     audio_cfg.pa_ctrl_io = AUDIO_PA_IO;
     audio_cfg.i2c_handle = s_i2c_handle;
     audio_cfg.sample_rate = 16000;
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    audio_cfg.volume     = 30;
+#else
     audio_cfg.volume     = 60;
+#endif
     esp_err_t audio_ret = audio_init(&audio_cfg);
     if (audio_ret != ESP_OK) {
         ESP_LOGW(TAG, "Audio init failed (0x%x), continuing without audio", audio_ret);

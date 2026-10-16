@@ -10,3 +10,8 @@ idf_component_register(
     REQUIRES ${ODROID_REQUIRES}
     PRIV_REQUIRES esp_timer
 )
+
+# Keep the temporary wiring and volume override confined to the NES build.
+if(CMAKE_PROJECT_NAME STREQUAL "nes_app" AND RETRO_NES_DIRECT_BUTTON_TEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE RETRO_NES_DIRECT_BUTTON_TEST=1)
+endif()

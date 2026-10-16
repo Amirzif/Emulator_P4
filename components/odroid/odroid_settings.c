@@ -68,12 +68,21 @@ char* odroid_util_GetFileNameWithoutExtension(const char* path)
 
 int32_t odroid_settings_Volume_get(void)
 {
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    return 1;
+#else
     return nvs_get_i32_default("Volume", 4);
+#endif
 }
 
 void odroid_settings_Volume_set(int32_t value)
 {
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    /* Temporary volume must not overwrite the user's saved setting. */
+    (void)value;
+#else
     nvs_set_i32_commit("Volume", value);
+#endif
 }
 
 /* ─── Backlight / Brightness ──────────────────────────────────── */

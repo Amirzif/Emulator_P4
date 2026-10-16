@@ -32,11 +32,17 @@ void odroid_audio_init(int sample_rate)
         ESP_LOGW(TAG, "Failed to set sample rate to %d: %s", sample_rate, esp_err_to_name(ret));
     }
 
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    /* Reapply after every NES sound init; never restore the saved loud level. */
+    s_volume_level = ODROID_VOLUME_LEVEL1;
+    ESP_ERROR_CHECK(audio_set_volume(30));
+#else
     /* Restore persisted volume level. */
     odroid_volume_level level = (odroid_volume_level)odroid_settings_Volume_get();
     if (level >= ODROID_VOLUME_LEVEL_COUNT) level = ODROID_VOLUME_LEVEL3;
     s_volume_level = level;
     ESP_LOGI(TAG, "Audio init (compat): sample_rate=%d, vol=%d", sample_rate, level);
+#endif
 }
 
 void odroid_audio_terminate(void)
@@ -47,6 +53,11 @@ void odroid_audio_terminate(void)
 
 void odroid_audio_volume_set(int volume)
 {
+#ifdef RETRO_NES_DIRECT_BUTTON_TEST
+    (void)volume;
+    s_volume_level = ODROID_VOLUME_LEVEL1;
+    ESP_ERROR_CHECK(audio_set_volume(30));
+#else
     if (volume < 0) volume = 0;
     if (volume >= ODROID_VOLUME_LEVEL_COUNT) volume = ODROID_VOLUME_LEVEL_COUNT - 1;
     s_volume_level = (odroid_volume_level)volume;
@@ -55,6 +66,7 @@ void odroid_audio_volume_set(int volume)
     int pct = (volume * 100) / (ODROID_VOLUME_LEVEL_COUNT - 1);
     audio_set_volume(pct);
     ESP_LOGI(TAG, "Volume set: %d/%d → %d%%", volume, ODROID_VOLUME_LEVEL_COUNT - 1, pct);
+#endif
 }
 
 odroid_volume_level odroid_audio_volume_get(void)
